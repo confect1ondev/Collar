@@ -1,0 +1,14 @@
+[Unit]
+Description=Collar Web Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/conf/Collar/collar-web
+ExecStart=/usr/bin/npm run serve
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

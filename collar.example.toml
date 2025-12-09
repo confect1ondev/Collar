@@ -1,0 +1,92 @@
+# Collar Daemon Configuration
+# Copy to ~/.config/collar/config.toml or collar.toml
+
+[server]
+# WebSocket URL of your Collar server
+url = "wss://leash.kxra.me/ws"
+# Device API key (get this from server config)
+device_key = "your-device-key-here"
+
+[device]
+# Human-readable name for this device
+name = "My Desktop"
+
+[polling]
+# How often to poll status (seconds)
+interval_secs = 30
+# Which scripts to run for status updates
+status_scripts = ["is_locked", "battery", "is_muted"]
+
+# ============================================================================
+# Scripts - Define your custom commands here
+# ============================================================================
+
+[[scripts]]
+id = "lock"
+name = "Lock Screen"
+description = "Lock the desktop session"
+type = "action"
+command = "loginctl lock-session"
+icon = "lock"
+
+[[scripts]]
+id = "unlock"
+name = "Unlock Screen"
+description = "Unlock the desktop session"
+type = "action"
+command = "loginctl unlock-session"
+icon = "unlock"
+
+[[scripts]]
+id = "is_locked"
+name = "Lock Status"
+description = "Check if screen is locked"
+type = "status"
+# Returns "yes" or "no"
+command = "loginctl show-session -p LockedHint --value"
+
+[[scripts]]
+id = "mute"
+name = "Mute Audio"
+description = "Mute system audio"
+type = "action"
+command = "pactl set-sink-mute @DEFAULT_SINK@ 1"
+icon = "volume-off"
+
+[[scripts]]
+id = "unmute"
+name = "Unmute Audio"
+description = "Unmute system audio"
+type = "action"
+command = "pactl set-sink-mute @DEFAULT_SINK@ 0"
+icon = "volume-up"
+
+[[scripts]]
+id = "is_muted"
+name = "Mute Status"
+description = "Check if audio is muted"
+type = "status"
+command = "pactl get-sink-mute @DEFAULT_SINK@ | grep -q yes && echo true || echo false"
+
+[[scripts]]
+id = "battery"
+name = "Battery Level"
+description = "Get battery percentage"
+type = "status"
+command = "cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo 100"
+
+[[scripts]]
+id = "sleep"
+name = "Sleep"
+description = "Put computer to sleep"
+type = "action"
+command = "systemctl suspend"
+icon = "moon"
+
+[[scripts]]
+id = "shutdown"
+name = "Shutdown"
+description = "Shut down the computer"
+type = "action"
+command = "systemctl poweroff"
+icon = "power"

@@ -1,0 +1,14 @@
+[Unit]
+Description=Collar Daemon
+After=network-online.target graphical-session.target
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/collar-daemon %h/.config/collar/config.toml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

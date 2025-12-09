@@ -1,0 +1,14 @@
+[Unit]
+Description=Collar Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/conf/Collar
+ExecStart=/home/ubuntu/conf/Collar/target/release/collar-server /home/ubuntu/conf/Collar/server.toml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

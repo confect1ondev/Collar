@@ -1,0 +1,22 @@
+# Rust
+/target/
+Cargo.lock
+
+# Node
+collar-web/node_modules/
+collar-web/dist/
+
+# Config (contains secrets)
+collar.toml
+server.toml
+*.local.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

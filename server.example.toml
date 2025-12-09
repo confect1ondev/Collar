@@ -1,0 +1,31 @@
+# Collar Server Configuration
+# Copy to server.toml
+
+[server]
+host = "0.0.0.0"
+port = 4221
+
+[auth]
+# Secret for JWT signing (generate a secure random string)
+jwt_secret = "your-secure-jwt-secret-change-this"
+# JWT expiry in hours
+jwt_expiry_hours = 24
+# Admin credentials
+admin_username = "admin"
+# Generate with: echo -n "yourpassword" | argon2 $(openssl rand -base64 16) -e
+admin_password_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
+
+# ============================================================================
+# Devices - Register your devices here
+# ============================================================================
+
+[[devices]]
+device_id = "550e8400-e29b-41d4-a716-446655440000"
+name = "My Desktop"
+# Generate a secure API key for each device
+api_key = "device-api-key-here"
+
+[[devices]]
+device_id = "550e8400-e29b-41d4-a716-446655440001"
+name = "My Laptop"
+api_key = "another-device-key"
