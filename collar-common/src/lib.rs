@@ -174,7 +174,6 @@ pub struct ExecuteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteResponse {
     pub command_id: CommandId,
-    pub queued: bool,
 }
 
 /// Login request.

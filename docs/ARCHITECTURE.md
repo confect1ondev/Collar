@@ -97,14 +97,12 @@ flowchart TB
         subgraph Core
             Hub[WebSocket Hub]
             State[Device State]
-            Queue[Command Queue]
         end
 
-        R3 --> Queue
+        R3 --> Hub
         R4 --> State
         R5 --> Hub
         Hub --> State
-        Hub --> Queue
     end
 ```
 
@@ -112,7 +110,7 @@ flowchart TB
 - Authenticate users and devices
 - Route commands from frontend to correct device
 - Maintain device connection state
-- Queue commands when device temporarily offline
+- Reject commands when target device is offline (no queueing — keeps retries predictable)
 
 ### 3. Frontend (React)
 
@@ -156,7 +154,7 @@ sequenceDiagram
 
     U->>F: Click "Lock Screen"
     F->>S: POST /devices/:id/command {script: "lock"}
-    S->>S: Validate & Queue
+    S->>S: Validate & route
     S->>C: WS: {type: "execute", script: "lock"}
     C->>C: Run lock script
     C->>S: WS: {type: "result", success: true}

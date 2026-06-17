@@ -42,5 +42,4 @@ export interface ExecuteRequest {
 
 export interface ExecuteResponse {
   command_id: string;
-  queued: boolean;
 }
