@@ -4,6 +4,10 @@
 [server]
 host = "0.0.0.0"
 port = 4221
+# Optional. Where the server persists known devices + their last status across
+# restarts. Required if you want HomeKit accessories to survive a server reboot
+# without waiting for daemons to reconnect first.
+state_path = "/var/lib/collar/state.json"
 
 [auth]
 # Secret for JWT signing (generate a secure random string)
@@ -24,8 +28,71 @@ device_id = "550e8400-e29b-41d4-a716-446655440000"
 name = "My Desktop"
 # Generate a secure API key for each device
 api_key = "device-api-key-here"
+# Optional. MAC address (12 hex digits, separators optional). Enables
+# Wake-on-LAN from the Homebridge plugin when this device is offline.
+# wol_mac = "aa:bb:cc:dd:ee:ff"
 
 [[devices]]
 device_id = "550e8400-e29b-41d4-a716-446655440001"
 name = "My Laptop"
 api_key = "another-device-key"
+
+# ============================================================================
+# HomeKit / Homebridge integration (optional)
+# ============================================================================
+# Removing this entire section disables the /api/homekit surface.
+#
+# Switches reference scripts already declared in the daemon's config — the
+# server doesn't invent commands. The state_script must also appear in the
+# daemon's [polling.status_scripts] list, otherwise the switch state never
+# updates.
+
+[homekit]
+# Dedicated API key for the Homebridge plugin. Do NOT reuse the admin password.
+api_key = "homebridge-collar-key-change-this"
+
+[[homekit.switches]]
+id = "desktop_lock"
+name = "Desktop Lock"
+device_id = "550e8400-e29b-41d4-a716-446655440000"
+on_script = "lock"
+off_script = "unlock"
+state_script = "is_locked"
+# is_locked emits "yes" / "no" — case-insensitive match.
+state_on_value = "yes"
+
+[[homekit.switches]]
+id = "desktop_mute"
+name = "Desktop Muted"
+device_id = "550e8400-e29b-41d4-a716-446655440000"
+on_script = "mute"
+off_script = "unmute"
+state_script = "is_muted"
+state_on_value = "true"
+
+# Exposed as a HomeKit LockMechanism instead of a plain Switch — picks up
+# the lock icon in the Home app and "lock my desktop" via Siri. on=true is
+# interpreted as Secured.
+[[homekit.switches]]
+id = "desktop_screen_lock"
+name = "Desktop Screen Lock"
+device_id = "550e8400-e29b-41d4-a716-446655440000"
+accessory_type = "lock"
+on_script = "lock"
+off_script = "unlock"
+state_script = "is_locked"
+state_on_value = "yes"
+
+# A "power" switch whose state mirrors whether the daemon is connected.
+# state_source = "online" ignores state_script/state_on_value and uses the
+# WebSocket connection state instead. ON means the PC is alive; the switch
+# flips to OFF the moment the daemon disconnects (e.g. after shutdown).
+# If wol_mac is set on the device, the Homebridge plugin will send a magic
+# packet when turned ON while offline — otherwise the toggle reverts.
+[[homekit.switches]]
+id = "desktop_power"
+name = "Desktop"
+device_id = "550e8400-e29b-41d4-a716-446655440000"
+on_script = "noop"
+off_script = "shutdown"
+state_source = "online"

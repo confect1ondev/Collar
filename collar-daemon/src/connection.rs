@@ -19,6 +19,21 @@ const PING_INTERVAL: Duration = Duration::from_secs(15);
 const PONG_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Discover the LAN IP that would be used to reach the public internet.
+/// This is the IP a Wake-on-LAN packet should target on this LAN.
+///
+/// Trick: open a UDP socket and `connect()` it to a public address — the OS
+/// fills in the local address it would route through, without sending any
+/// packets. If anything fails (no network, IPv6-only, etc.) we just return
+/// `None` and WoL falls back to broadcast on the plugin side.
+async fn detect_lan_ip() -> Option<String> {
+    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await.ok()?;
+    // 1.1.1.1 is just a routable destination; no traffic actually goes there.
+    socket.connect("1.1.1.1:80").await.ok()?;
+    let local = socket.local_addr().ok()?;
+    Some(local.ip().to_string())
+}
+
 /// Events from the connection to the main loop.
 #[derive(Debug)]
 pub enum ConnectionEvent {
@@ -96,10 +111,11 @@ impl ConnectionManager {
 
         let (mut write, mut read) = ws_stream.split();
 
-        // Send auth message with available scripts
+        // Send auth message with available scripts + LAN IP for WoL targeting.
         let auth_msg = DaemonMessage::Auth {
             device_key: self.config.server.device_key.clone(),
             scripts: self.scripts.clone(),
+            lan_ip: detect_lan_ip().await,
         };
         write
             .send(Message::Text(serde_json::to_string(&auth_msg)?))
@@ -131,6 +147,14 @@ impl ConnectionManager {
         let mut ping_interval = interval(PING_INTERVAL);
         ping_interval.tick().await; // Skip the immediate first tick
         let mut awaiting_pong = false;
+
+        // SIGTERM/SIGINT handler. Systemd sends SIGTERM during shutdown — we
+        // catch it, send a clean WS Close frame so the server marks the
+        // device offline *immediately* (rather than waiting on a TCP
+        // timeout or the server's stale-device sweeper), then exit.
+        let mut sigterm =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("Failed to install SIGTERM handler")?;
 
         loop {
             tokio::select! {
@@ -201,6 +225,24 @@ impl ConnectionManager {
                     let msg = DaemonMessage::Ping;
                     write.send(Message::Text(serde_json::to_string(&msg)?)).await?;
                     awaiting_pong = true;
+                }
+
+                // Process termination → send clean close so server reacts now.
+                _ = sigterm.recv() => {
+                    info!("SIGTERM received, sending WS close before exit");
+                    let _ = tokio::time::timeout(
+                        Duration::from_secs(1),
+                        write.send(Message::Close(None)),
+                    ).await;
+                    std::process::exit(0);
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("SIGINT received, sending WS close before exit");
+                    let _ = tokio::time::timeout(
+                        Duration::from_secs(1),
+                        write.send(Message::Close(None)),
+                    ).await;
+                    std::process::exit(0);
                 }
             }
         }

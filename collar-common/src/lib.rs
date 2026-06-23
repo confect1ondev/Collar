@@ -4,6 +4,37 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Namespace UUID for deriving stable HomeKit accessory identities.
+/// Hard-coded; treat as part of the wire contract.
+pub const HOMEKIT_NAMESPACE: Uuid = Uuid::from_bytes([
+    0xc0, 0x11, 0xa7, 0x5e, 0x9a, 0xfe, 0x40, 0x1d, 0xb0, 0x55, 0xc0, 0x11, 0xa7, 0x5e, 0xb0, 0x55,
+]);
+
+/// Derive the stable HomeKit accessory UUID for an entire device. All
+/// services (Switch, Lock, …) configured for a given device live under this
+/// one accessory in HomeKit, so identity is device-level.
+pub fn homekit_device_accessory_uuid(device_id: &Uuid) -> Uuid {
+    let mut name = String::with_capacity(64);
+    name.push_str("device|");
+    name.push_str(&device_id.to_string());
+    Uuid::new_v5(&HOMEKIT_NAMESPACE, name.as_bytes())
+}
+
+/// Derive a stable subtype string for one service on a device's accessory.
+/// HAP requires this when multiple services of the same type share an
+/// accessory. Derived from the *behaviour* (on/off/state) so that renaming
+/// the user-facing `id` in config is a free operation.
+pub fn homekit_service_subtype(on_script: &str, off_script: &str, state_script: &str) -> String {
+    let mut name = String::with_capacity(96);
+    name.push_str("svc|");
+    name.push_str(on_script);
+    name.push('|');
+    name.push_str(off_script);
+    name.push('|');
+    name.push_str(state_script);
+    Uuid::new_v5(&HOMEKIT_NAMESPACE, name.as_bytes()).to_string()
+}
+
 /// Unique device identifier.
 pub type DeviceId = Uuid;
 
@@ -26,6 +57,11 @@ pub enum DaemonMessage {
         device_key: String,
         #[serde(default)]
         scripts: Vec<ScriptInfo>,
+        /// LAN IPv4 address the daemon currently has on its primary route.
+        /// Optional for backward compatibility — older daemons may omit it.
+        /// Used server-side for Wake-on-LAN unicast targeting.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        lan_ip: Option<String>,
     },
 
     /// Result of command execution.
@@ -188,6 +224,93 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// HomeKit
+// ============================================================================
+
+/// Which HomeKit service type a configured switch is exposed as.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeKitAccessoryType {
+    /// Standard on/off toggle. Default.
+    #[default]
+    Switch,
+    /// HomeKit LockMechanism — surfaces as a lock in the Home app and via
+    /// Siri ("lock my desktop"). `on=true` means Secured (locked).
+    Lock,
+}
+
+/// State of one service on a device's HomeKit accessory.
+///
+/// Multiple of these can share an `accessory_uuid` — that's how Power and
+/// Lock end up grouped under a single "Blue Desktop" accessory in HomeKit.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HomeKitSwitchState {
+    /// User-facing service identifier (matches `[[homekit.switches]].id`).
+    /// Cosmetic; renaming it does not re-pair anything.
+    pub id: String,
+    /// Stable HomeKit accessory identity. Shared across every service on
+    /// the same device — i.e. one accessory per `device_id`.
+    pub accessory_uuid: Uuid,
+    /// Stable per-service identifier within the accessory. HAP requires
+    /// this when multiple services of the same type live on one accessory.
+    pub service_subtype: String,
+    /// HomeKit service type this exposes (Switch or LockMechanism).
+    #[serde(default)]
+    pub accessory_type: HomeKitAccessoryType,
+    /// Display name shown for this *service* in the Home app.
+    pub name: String,
+    pub device_id: DeviceId,
+    /// Display name shown for the device-level accessory in the Home app.
+    pub device_name: String,
+    /// Whether the underlying daemon is currently connected.
+    pub device_online: bool,
+    /// Current on/off state derived from the device's last status report.
+    /// For `Lock`, `true` == Secured. `None` if state has never been
+    /// observed (still appears in HomeKit as OFF/Unsecured initially).
+    pub on: Option<bool>,
+    /// ISO timestamp of the most recent status observation from the daemon.
+    /// `None` if the daemon has never reported status for this device.
+    pub last_observed: Option<DateTime<Utc>>,
+    /// MAC address (colon- or dash-separated, or unseparated hex) for the
+    /// device's wired NIC. When set and the device is currently offline,
+    /// the Homebridge plugin will fire a Wake-on-LAN magic packet on
+    /// SET on=true instead of asking the server (which can't reach an
+    /// offline daemon anyway).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub wol_mac: Option<String>,
+    /// LAN IPv4 of the device's NIC, last reported by the daemon on
+    /// connection. Used by the plugin for **unicast** WoL on networks that
+    /// drop broadcasts (e.g. mesh routers). Stale if the device has been
+    /// offline long enough for the router's ARP cache to expire.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub wol_ip: Option<String>,
+}
+
+/// Request body for setting a switch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeKitSetRequest {
+    pub on: bool,
+}
+
+/// Response when toggling a switch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeKitSetResponse {
+    pub command_id: CommandId,
+    /// The script id that was dispatched.
+    pub dispatched_script: ScriptId,
+}
+
+/// Events streamed to subscribed HomeKit clients over SSE.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HomeKitEvent {
+    /// A switch's state, online status, or display name has changed.
+    SwitchUpdated { state: HomeKitSwitchState },
+    /// Server-side keepalive so clients can detect dead connections.
+    Heartbeat,
 }
 
 // ============================================================================

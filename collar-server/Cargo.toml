@@ -31,3 +31,10 @@ chrono = { workspace = true }
 
 dashmap = "5"
 cookie = { workspace = true }
+subtle = "2"
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"
