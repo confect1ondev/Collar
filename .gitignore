@@ -5,6 +5,12 @@ Cargo.lock
 # Node
 collar-web/node_modules/
 collar-web/dist/
+collar-homebridge/node_modules/
+collar-homebridge/dist/
+collar-homebridge/*.tgz
+
+# Persisted server state
+state.json
 
 # Config (contains secrets)
 collar.toml

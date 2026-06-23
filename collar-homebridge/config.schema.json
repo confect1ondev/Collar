@@ -1,0 +1,40 @@
+{
+  "pluginAlias": "Collar",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Connect this Homebridge instance to your Collar server. Switches are configured server-side under `[[homekit.switches]]` — this plugin discovers them automatically.",
+  "footerDisplay": "See the Collar repository for setup details.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Bridge Name",
+        "type": "string",
+        "default": "Collar",
+        "required": true
+      },
+      "serverUrl": {
+        "title": "Server URL",
+        "type": "string",
+        "default": "https://your-collar-api.example.com",
+        "format": "uri",
+        "required": true,
+        "description": "Base URL of the Collar API (without the trailing /api)."
+      },
+      "apiKey": {
+        "title": "API Key",
+        "type": "string",
+        "required": true,
+        "description": "Dedicated key from server.toml [homekit].api_key."
+      },
+      "pollIntervalSeconds": {
+        "title": "Poll Interval (seconds)",
+        "type": "integer",
+        "default": 60,
+        "minimum": 5,
+        "maximum": 600,
+        "description": "Fallback poll cadence. Real-time updates come over SSE; this is a safety net for missed events after a network blip."
+      }
+    }
+  }
+}

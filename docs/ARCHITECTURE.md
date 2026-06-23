@@ -97,14 +97,12 @@ flowchart TB
         subgraph Core
             Hub[WebSocket Hub]
             State[Device State]
-            Queue[Command Queue]
         end
 
-        R3 --> Queue
+        R3 --> Hub
         R4 --> State
         R5 --> Hub
         Hub --> State
-        Hub --> Queue
     end
 ```
 
@@ -112,7 +110,7 @@ flowchart TB
 - Authenticate users and devices
 - Route commands from frontend to correct device
 - Maintain device connection state
-- Queue commands when device temporarily offline
+- Reject commands when target device is offline (no queueing — keeps retries predictable)
 
 ### 3. Frontend (React)
 
@@ -156,7 +154,7 @@ sequenceDiagram
 
     U->>F: Click "Lock Screen"
     F->>S: POST /devices/:id/command {script: "lock"}
-    S->>S: Validate & Queue
+    S->>S: Validate & route
     S->>C: WS: {type: "execute", script: "lock"}
     C->>C: Run lock script
     C->>S: WS: {type: "result", success: true}
@@ -270,6 +268,38 @@ flowchart TB
 - Device-specific API keys for daemons
 - Scripts defined locally on daemon (server cannot send arbitrary commands)
 
+## Parallel control surfaces
+
+The server is the single source of truth; everything else is a client.
+
+```
+┌──────────────┐                              ┌──────────────┐
+│  Web UI      │ ── JWT cookie ──┐            │  Homebridge  │
+└──────────────┘                 │            └──────┬───────┘
+                                 ▼                   │ Bearer api_key
+                          ┌─────────────┐            │
+                          │ collar-     │ ◄──────────┘
+                          │ server      │
+                          └──────┬──────┘
+                                 │ WSS, per-device api_key
+                                 ▼
+                          ┌─────────────┐
+                          │ collar-     │
+                          │ daemon(s)   │
+                          └─────────────┘
+```
+
+The Homebridge plugin and the web UI never see each other. They share the
+server's device-and-status model but use independent authentication. See
+[HOMEKIT.md](HOMEKIT.md) for the HomeKit-specific story.
+
+## Persistence
+
+The server can optionally persist its device cache to JSON at
+`[server].state_path` so accessories (and HomeKit configuration) survive
+restarts. Without it, the server is purely in-memory and restarts look like
+a brief mass-disconnect.
+
 ## Project Structure
 
 ```
@@ -289,6 +319,8 @@ collar/
 │   │   ├── api.rs          # REST endpoints
 │   │   ├── auth.rs         # JWT + cookie authentication
 │   │   ├── config.rs       # Configuration
+│   │   ├── homekit.rs      # /api/homekit surface
+│   │   ├── persistence.rs  # JSON state save/load
 │   │   ├── ratelimit.rs    # Rate limiting middleware
 │   │   ├── state.rs        # Shared app state
 │   │   └── ws.rs           # WebSocket handler
@@ -306,6 +338,18 @@ collar/
 │   │   └── hooks/
 │   └── package.json
 │
+├── collar-homebridge/      # TypeScript - Homebridge plugin
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── platform.ts
+│   │   ├── switch-accessory.ts
+│   │   ├── client.ts
+│   │   ├── settings.ts
+│   │   └── types.ts
+│   ├── config.schema.json
+│   ├── package.json
+│   └── tsconfig.json
+│
 ├── collar-common/          # Shared Rust types
 │   ├── src/
 │   │   └── lib.rs
@@ -321,7 +365,8 @@ collar/
 ├── collar.example.toml     # Daemon config example
 ├── server.example.toml     # Server config example
 └── docs/
-    └── ARCHITECTURE.md
+    ├── ARCHITECTURE.md
+    └── HOMEKIT.md
 ```
 
 ## Technology Choices

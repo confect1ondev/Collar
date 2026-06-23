@@ -141,10 +141,7 @@ async fn execute_command(
             )
         })?;
 
-    Ok(Json(ExecuteResponse {
-        command_id,
-        queued: false,
-    }))
+    Ok(Json(ExecuteResponse { command_id }))
 }
 
 /// Get device status.

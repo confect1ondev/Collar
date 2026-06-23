@@ -8,6 +8,7 @@ use axum::{
     response::Response,
 };
 use collar_common::{DaemonMessage, DeviceId, ScriptInfo, ServerMessage};
+use std::net::IpAddr;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -27,7 +28,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut sender, mut receiver) = socket.split();
 
     // Wait for auth message
-    let (device_id, device_name, scripts) = match wait_for_auth(&mut receiver, &state).await {
+    let (device_id, device_name, scripts, lan_ip) = match wait_for_auth(&mut receiver, &state).await
+    {
         Ok(info) => info,
         Err(e) => {
             warn!("Auth failed: {e}");
@@ -60,8 +62,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Create channel for sending messages to this device
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(32);
 
-    // Register device with scripts
-    state.register_device(device_id, device_name.clone(), scripts, tx);
+    // Register device with scripts + last-known LAN IP for WoL.
+    let session_id = state
+        .register_device(device_id, device_name.clone(), scripts, lan_ip, tx)
+        .await;
 
     // Spawn sender task
     let send_task = tokio::spawn(async move {
@@ -88,8 +92,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     error!("Error handling message: {e}");
                 }
             }
-            Ok(Message::Ping(data)) => {
-                // Pong is handled automatically by axum
+            Ok(Message::Ping(_)) => {
+                // Pong is auto-sent by tungstenite; just keep the device fresh.
                 state.touch_device(&device_id);
             }
             Ok(Message::Close(_)) => {
@@ -104,8 +108,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Cleanup
-    state.unregister_device(&device_id);
+    // Cleanup — gated on session_id so a late close from a dead socket
+    // can't kick a freshly-reconnected daemon.
+    state
+        .unregister_device_if_session(&device_id, session_id)
+        .await;
     send_task.abort();
 
     info!(device_id = %device_id, "Device session ended");
@@ -115,7 +122,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 async fn wait_for_auth(
     receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
-) -> Result<(DeviceId, String, Vec<ScriptInfo>), String> {
+) -> Result<(DeviceId, String, Vec<ScriptInfo>, Option<IpAddr>), String> {
     // Timeout for auth
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(10), receiver.next());
 
@@ -125,11 +132,16 @@ async fn wait_for_auth(
                 serde_json::from_str(&text).map_err(|e| format!("Invalid message: {e}"))?;
 
             match msg {
-                DaemonMessage::Auth { device_key, scripts } => {
+                DaemonMessage::Auth {
+                    device_key,
+                    scripts,
+                    lan_ip,
+                } => {
                     let (id, name) = state
                         .validate_device_key(&device_key)
                         .ok_or_else(|| "Invalid device key".to_string())?;
-                    Ok((id, name, scripts))
+                    let parsed_ip = lan_ip.as_deref().and_then(|s| s.parse::<IpAddr>().ok());
+                    Ok((id, name, scripts, parsed_ip))
                 }
                 _ => Err("Expected auth message".to_string()),
             }
@@ -148,7 +160,7 @@ async fn handle_message(text: &str, device_id: DeviceId, state: &AppState) -> an
 
     match msg {
         DaemonMessage::Status { data } => {
-            state.update_status(&device_id, data);
+            state.update_status(&device_id, data).await;
         }
         DaemonMessage::CommandResult {
             command_id,

@@ -14,6 +14,7 @@ Discipline for your clankers. Remote control your computers from your phone!
 - **collar-daemon** - Background service on your computer (Rust)
 - **collar-server** - API server on VPS (Rust)
 - **collar-web** - Control panel frontend (React)
+- **collar-homebridge** - Homebridge plugin exposing devices to HomeKit (TypeScript, optional)
 
 ## Quick Start
 
@@ -119,6 +120,12 @@ command = "loginctl show-session -p LockedHint --value"
 ## Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
+
+## HomeKit / Homebridge
+
+Collar can expose commands as HomeKit switches via the bundled Homebridge
+plugin. See [docs/HOMEKIT.md](docs/HOMEKIT.md) and
+[`collar-homebridge/README.md`](collar-homebridge/README.md).
 
 ## License
 
